@@ -20,3 +20,6 @@ app/src/main/resources/static
 
 # Ignore node module directory
 client/node_modules
+
+# IDE configurations
+.idea
