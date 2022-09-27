@@ -25,6 +25,7 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter'
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
@@ -41,7 +42,7 @@ testing {
 def props = new Properties();
 
 final def nodeDir = "node.dir"
-final def currentDir = file("./").getAbsolutePath()
+final def currentDir = file("./").getAbsolutePath().replace("\\", "/")
 
 def buildProperties = file("./build.properties")
 if (!buildProperties.exists())
@@ -51,6 +52,7 @@ buildProperties.withInputStream {props.load(it)}
 
 def nodeNotFound = "npm executable could not found. Either install node.js or define node.js install path in build.properties file as node.dir."
 
+// Registering new tasks
 tasks.register("findNodeJS")
 tasks.register("buildClient")
 tasks.register("buildRelease")
@@ -77,13 +79,12 @@ findNodeJS {
         List<String> output = new ArrayList<>(), error = new ArrayList<>();
 
         proc.inputStream.readLines().forEach(output::add)
-        proc.errorStream.readLines().forEach(error::add)
 
-        if (error.size() > 0 || output.size() < 1)
+        if (proc.exitValue() != 0)
             throw new Exception(nodeNotFound)
         else {
             props.setProperty(nodeDir, output.get(output.size() - 1).replace("\\", "/"))
-            props.forEach((key, val) -> { buildProperties.write(key + "=" + val) })
+            props.forEach((key, val) -> { buildProperties.write(key + "=" + val + "\n") })
 
             println "npm found at " + props.getProperty(nodeDir)
         }
@@ -99,6 +100,7 @@ buildClient {
     dependsOn 'clean'
 
     def client = file(currentDir + "/../client")
+    def staticDir = "$currentDir/src/main/resources/static"
     doFirst {
         if (!client.exists())
             throw new Exception("No react application found.")
@@ -107,26 +109,47 @@ buildClient {
         println "Executing " + command
         def proc = command.execute()
         proc.waitForProcessOutput(System.out, System.err)
-        if(proc.exitValue() == 1)
+        if(proc.exitValue() != 0)
             throw new Exception("React application build failed.")
 
         copy {
             from client.getAbsolutePath() + "/build"
-            def staticDir = "$currentDir/src/main/resources/static"
+            exclude 'index.html'
             if (!file(staticDir).exists()) {
                 file(staticDir).mkdir()
             }
             into staticDir
         }
+
+        copy {
+            from client.getAbsolutePath() + '/build/index.html'
+            into staticDir + "/../templates/"
+        }
     }
 
     doLast {
         file(client.getAbsolutePath() + "/build").deleteDir()
+
+        def css = file(staticDir + "/static/css").listFiles()[0]
+
+        def appProps = new Properties()
+        def appPropsFile = file(staticDir + "/../application.properties")
+        appPropsFile.withInputStream {appProps.load(it) }
+
+        appProps.put("spring.react.css", css.getAbsolutePath().replace("\\", "/").replace(staticDir, ""))
+
+        appPropsFile.withOutputStream {
+            appProps.forEach((key, val) -> {
+                it.write((key + "=" + val + "\n").getBytes())
+            })
+        }
     }
 }
 
 clean {
     doLast {
+        def index = file("$currentDir/src/main/resources/templates/index.html")
+        if(index.exists()) index.delete();
         def clientBuildDir = file("$currentDir/src/main/resources/static")
         if (clientBuildDir.exists())
             clientBuildDir.deleteDir()
@@ -146,6 +169,6 @@ run {
     group "application"
     description "Builds the react application and then runs the project."
 
-    dependsOn 'buildClient', 'bootJar'
+    dependsOn 'buildClient', 'bootRun'
     mustRunAfter 'buildClient'
 }
