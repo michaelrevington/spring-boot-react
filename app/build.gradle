@@ -64,7 +64,7 @@ findNodeJS {
 
     doLast {
         def os = System.getProperty("os.name").toLowerCase();
-
+        
         def command = ""
         if (os.contains("windows")) {
             command += "where"
@@ -101,11 +101,16 @@ buildClient {
 
     def client = file(currentDir + "/../client")
     def staticDir = "$currentDir/src/main/resources/static"
+
     doFirst {
         if (!client.exists())
             throw new Exception("No react application found.")
 
-        def command = props.getProperty(nodeDir) + " run build --prefix=\"" + client.getAbsolutePath().replace('\\', '/') + "\""
+        def command = props.getProperty(nodeDir) + " run build "
+        if (client.getAbsolutePath().contains(" ")) {
+            command += "--prefix=\"" + client.getAbsolutePath().replace('\\', '/') + "\""
+        } else
+            command += "--prefix=" + client.getAbsolutePath().replace('\\', '/')
         println "Executing " + command
         def proc = command.execute()
         proc.waitForProcessOutput(System.out, System.err)
@@ -130,7 +135,17 @@ buildClient {
     doLast {
         file(client.getAbsolutePath() + "/build").deleteDir()
 
-        def css = file(staticDir + "/static/css").listFiles()[0]
+        def cssFiles = file(staticDir + "/static/css").listFiles()
+        def css = null;
+        for (def i = 0; i < cssFiles.length; i++) {
+            if (cssFiles[i].getName().endsWithIgnoreCase(".css")) {
+                css = cssFiles[i];
+                break;
+            }
+        }
+
+        if (css == null)
+            throw new Exception("Can't find a css file to link.");
 
         def appProps = new Properties()
         def appPropsFile = file(staticDir + "/../application.properties")
