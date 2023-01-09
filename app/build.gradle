@@ -64,7 +64,7 @@ findNodeJS {
 
     doLast {
         def os = System.getProperty("os.name").toLowerCase();
-        println(os);
+        
         def command = ""
         if (os.contains("windows")) {
             command += "where"
